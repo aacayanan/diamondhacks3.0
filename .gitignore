@@ -1,6 +1,6 @@
 .idea
 .vscode
-.env
+browseruse-testing/.env
 .claude
 .venv/
 
