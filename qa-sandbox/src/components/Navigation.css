@@ -1,0 +1,95 @@
+.navbar {
+  background-color: white;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 70px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  padding: 0 2rem;
+  /* BUG 1: Fixed navbar overlapping content on small screens */
+  /* BUG 2: Height too tall for mobile */
+}
+
+.nav-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.nav-brand h2 {
+  color: #1e293b;
+  font-size: 1.5rem;
+  font-weight: 600;
+  /* BUG 3: Poor color contrast on some backgrounds */
+  margin: 0;
+}
+
+.nav-links {
+  display: flex;
+  gap: 2rem;
+  /* BUG 4: Gap too large causing overflow on small screens */
+}
+
+.nav-link {
+  background: none;
+  border: none;
+  color: #64748b;
+  font-size: 0.875rem;
+  cursor: pointer;
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  transition: all 0.2s ease;
+  /* BUG 5: Hitbox doesn't match visual - padding too small */
+  /* BUG 6: No focus outline for keyboard navigation */
+}
+
+.nav-link:hover {
+  color: #1e293b;
+  background-color: #f8fafc;
+  /* BUG 7: Subtle hover change hard to notice */
+}
+
+.nav-link.active {
+  color: #2563eb;
+  font-weight: 500;
+  /* BUG 8: Active state not visually distinct enough */
+  border-bottom: 2px solid #2563eb;
+  /* BUG 9: Border bottom causes layout shift on activation */
+}
+
+.nav-user {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.875rem;
+  color: #64748b;
+  /* BUG 10: Text too small for accessibility */
+}
+
+/* BUG 11: No responsive adjustments for mobile */
+@media (max-width: 768px) {
+  .navbar {
+    height: 80px; /* Made it even taller on mobile */
+    padding: 0 1rem;
+  }
+
+  .nav-links {
+    gap: 3rem; /* Increased gap causing more overflow */
+  }
+
+  .nav-link {
+    font-size: 0.75rem; /* Made text smaller */
+    padding: 0.25rem 0.5rem;
+  }
+
+  .nav-user {
+    font-size: 0.7rem;
+  }
+}

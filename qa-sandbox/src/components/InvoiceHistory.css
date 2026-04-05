@@ -1,0 +1,224 @@
+.invoice-history {
+  background: var(--card-bg);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  padding: 1.5rem;
+  border: 1px solid var(--border-color);
+}
+
+.invoice-history h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 1.5rem;
+}
+
+.invoice-table {
+  width: 100%;
+}
+
+.invoice-header,
+.invoice-row {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr 1fr 1fr 1fr;
+  gap: 1rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.invoice-header {
+  font-weight: 600;
+  color: #374151;
+  border-bottom: 2px solid #e2e8f0;
+  padding-bottom: 0.5rem;
+}
+
+.invoice-col {
+  font-size: 0.875rem;
+}
+
+.invoice-number {
+  font-family: var(--mono);
+}
+
+.invoice-date {
+  color: #64748b;
+}
+
+.invoice-amount {
+  font-weight: 500;
+  color: #1e293b;
+}
+
+.invoice-status {
+  text-transform: capitalize;
+  font-weight: 500;
+}
+
+.status-paid {
+  color: #10b981;
+}
+
+.status-pending {
+  color: #f59e0b;
+}
+
+.status-overdue {
+  color: #ef4444;
+}
+
+.invoice-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.details-btn,
+.pay-now-btn,
+.download-btn {
+  padding: 0.5rem 0.75rem;
+  border: none;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.details-btn {
+  background-color: #64748b;
+  color: white;
+}
+
+.details-btn:hover {
+  background-color: #475569;
+}
+
+.pay-now-btn {
+  background-color: var(--primary-blue);
+  color: white;
+}
+
+.pay-now-btn:hover {
+  background-color: var(--primary-blue-hover);
+}
+
+.download-btn {
+  background-color: #6b7280;
+  color: white;
+}
+
+.download-btn:hover {
+  background-color: #4b5563;
+}
+
+.invoice-details {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.invoice-details-body {
+  background: var(--card-bg);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: 2rem;
+  width: 90%;
+  max-width: 500px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.invoice-details-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.invoice-details-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.close-details {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  color: #64748b;
+  cursor: pointer;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.close-details:hover {
+  background-color: #f1f5f9;
+  color: #1e293b;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.detail-row:last-child {
+  border-bottom: none;
+}
+
+.detail-label {
+  font-weight: 500;
+  color: #374151;
+}
+
+.detail-value {
+  color: #1e293b;
+}
+
+.invoice-details-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.pay-now-btn,
+.download-btn {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pay-now-btn {
+  background-color: var(--primary-blue);
+  color: white;
+}
+
+.pay-now-btn:hover {
+  background-color: var(--primary-blue-hover);
+}
+
+.download-btn {
+  background-color: #6b7280;
+  color: white;
+}
+
+.download-btn:hover {
+  background-color: #4b5563;
+}
