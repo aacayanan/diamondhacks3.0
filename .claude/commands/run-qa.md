@@ -53,25 +53,42 @@ fi
 
 ---
 
-## Phase 2: Bug Fix Loop
+## Phase 2: Bug Fix Loop (one bug at a time)
 
-Run the orchestrator (`loop.py`), which drives the one-bug-at-a-time cycle:
+Each iteration is manual — Claude drives every step.
 
-1. `loop.py` reads `bug_report.json`, picks the **first unfixed** bug
-2. Calls `run_qa.py` → BrowserUse navigates to the bug's route, highlights the element with a red border
-3. `loop.py` reads the updated report, sends the bug + relevant files to Claude Code
-4. Claude Code applies a surgical fix to the correct page/component files
-5. Loop repeats until all bugs are resolved
+### Step 1 — Run `run_qa.py` to highlight the first unfixed bug
 
-Each bug carries a `route` field (`/billing`, `/settings`, `/profile`) that determines:
-- Which page BrowserUse visits
-- Which source files Claude Code is allowed to edit
+```bash
+cd qa && source ../.venv/Scripts/activate 2>/dev/null; python run_qa.py "$TUNNEL_HOST" bug_report.json
+```
+
+BrowserUse navigates to the bug's route, highlights the element in the DOM with a red border, and saves the result to `bug_report.json`.
+
+### Step 2 — Read and present the bug report
+
+Read `bug_report.json`. Present the first unfixed bug to the user:
+- Bug ID, route, category, severity, description
+- Which source files are affected (based on the `route` field)
+
+Each bug carries a `route` field (`/billing`, `/settings`, `/profile`) that maps to source files:
+- `/billing` → `qa-sandbox/src/pages/Billing.jsx`
+- `/settings` → `qa-sandbox/src/pages/Settings.jsx`
+- `/profile` → `qa-sandbox/src/pages/Profile.jsx`
+
+### Step 3 — Recommend and apply a fix
+
+Read the affected source files, explain the bug, then apply a surgical fix. Only edit files mapped to the bug's `route`. One fix per iteration.
+
+### Step 4 — Run `loop.py` to recheck for remaining bugs
 
 ```bash
 cd qa && python loop.py "$TUNNEL_HOST" bug_report.json
 ```
 
-After it completes, present the results from the console output.
+`loop.py` rechecks the bug report, resets state for verification, and determines if there are more unfixed bugs. If there are, repeat from Step 1.
+
+After all bugs are resolved, present the final results.
 
 ---
 
@@ -87,9 +104,10 @@ echo "Done."
 
 ## Constraints
 
-- **One bug at a time.** Each iteration processes exactly one bug end-to-end.
-- **`loop.py` is the orchestrator.** It calls `run_qa.py` and `claude` in sequence.
-- **Route-aware.** Bugs have a `route` field that maps to the correct page and source files.
-- **Progress is written after each bug.** `bug_report.json` updates in real-time.
+- **One bug at a time.** Never batch fixes. Each iteration: run_qa.py → read report → fix → loop.py → repeat.
+- **Claude is the orchestrator.** You call `run_qa.py` and `loop.py` manually at each step.
+- **Route-aware.** Only edit files mapped to the bug's `route` field.
+- **Present before fixing.** Always read `bug_report.json` and explain the bug to the user before applying a fix.
+- **`loop.py` rechecks.** After each fix, run `loop.py` to verify and check for more bugs.
 - **Tunnel URLs are CLI args only.** Never write them to files.
 - **Always activate .venv** before running Python.

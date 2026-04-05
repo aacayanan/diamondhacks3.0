@@ -22,17 +22,18 @@ npm run preview      # Preview production build
 
 ### QA Testing
 
-The full QA workflow is automated via the `/run-qa` command (defined in `.claude/commands/run-qa.md`). The steps are:
+The full QA workflow is automated via the `/run-qa` command (defined in `.claude/commands/run-qa.md`). The loop is one bug at a time:
 
-1. Start dev server: `cd qa-sandbox/ && npm run dev -- --host --allowed-hosts all &` and capture `DEV_PID`
-2. Start Cloudflare tunnel: `browser-use tunnel <PORT>` and capture the `TUNNEL_URL`
-3. Extract hostname and run: `python qa/run_qa.py $TUNNEL_HOST`
-4. Read `qa/bug_report.json` for results
-5. Kill dev server: `kill $DEV_PID`
+1. Run `run_qa.py` → BrowserUse highlights the first unfixed bug, saves result to `bug_report.json`
+2. Claude reads `bug_report.json`, explains the bug, applies a surgical fix to the source files
+3. Run `loop.py` → rechecks for unfixed bugs, resets state for verification
+4. Repeat from step 1 until all bugs are resolved
 
 **Constraints for QA runs:**
-- Do NOT modify source files or fix bugs — detect and report only
-- `TUNNEL_URL` is passed as a CLI argument, never written to files
+- One bug at a time — never batch fixes
+- Only edit files in the bug's `route` mapping (e.g. `/billing` → `Billing.jsx`)
+- `TUNNEL_HOST` is passed as a CLI argument, never written to files
+- Always activate `.venv` before running Python (`source .venv/Scripts/activate` on Windows)
 
 ### Python Environment
 
