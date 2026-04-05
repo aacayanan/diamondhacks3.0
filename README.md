@@ -48,7 +48,7 @@ Each bug is processed individually — never batched. Bugs carry a `route` field
 ## Prerequisites
 
 - **Node.js** (for the qa-sandbox frontend)
-- **Python 3.10+** with a virtual environment at `.venv/`
+- **Python 3.11+** with a virtual environment at `.venv/`
 - **BrowserUse CLI** (`browser-use` command available on PATH)
 - **BrowserUse SDK v3** (`browser_use_sdk` Python package)
 - **Claude Code CLI** (`claude` command)
@@ -223,7 +223,6 @@ Claude Code only edits files mapped to the bug's route — never other files.
 
 ## Constraints
 
-- **One bug at a time** — never batch fixes
 - **Claude is the orchestrator** — it calls `run_qa.py` and `loop.py` manually at each step
 - **Route-aware** — only edit files mapped to the bug's route field
 - **Present before fixing** — always read and explain the bug before applying a fix
