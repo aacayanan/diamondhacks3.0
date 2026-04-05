@@ -1,4 +1,4 @@
-# Diamond Hacks 3.0 — Closed-Loop QA Automation
+# Ouroboros — Diamond Hacks 3.0 — Closed-Loop QA Automation
 
 An autonomous QA testing system where one AI agent finds bugs in a live web app and another AI agent fixes them, in a one-bug-at-a-time closed loop until all issues are resolved.
 
