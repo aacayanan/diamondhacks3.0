@@ -1,6 +1,6 @@
 .idea
 .vscode
-browseruse-testing/.env
-.claude
+**/.env
 .venv/
-
+.claude/settings.local.json
+**/bug_report.json

@@ -1,5 +1,6 @@
 import asyncio
 import os
+import sys
 import json
 from dotenv import load_dotenv
 from browser_use_sdk.v3 import AsyncBrowserUse
@@ -13,6 +14,12 @@ async def main():
     if not api_key:
         raise ValueError("BROWSER_USE_API_KEY not found in environment variables")
 
+    # Get tunnel URL from CLI arguments
+    if len(sys.argv) < 2:
+        print("Usage: python run_qa.py <tunnel_url>")
+        sys.exit(1)
+    tunnel_url = sys.argv[1]
+
     # Initialize the BrowserUse client
     client = AsyncBrowserUse(api_key=api_key)
 
@@ -20,10 +27,10 @@ async def main():
     workspace = await client.workspaces.create(name="qa-workspace")
 
     # Define the task to get top 3 stories from Hacker News
-    task = """
+    task = f"""
     Your output MUST be saved as bug_report.json with EXACTLY this JSON structure and no other format:
-    
-    {
+
+    {{
       "status": "success" | "bug_found" | "failed",
       "timestamp": "<ISO timestamp>",
       "actions_taken": [
@@ -33,19 +40,19 @@ async def main():
       ],
       "likely_file": "src/App.jsx",
       "notes": "<anything else observed that may be relevant>"
-    }
-    
+    }}
+
     Do not deviate from this structure. All findings must map into this schema.
-    
+
     ---
-    
+
     Now perform the following task:
-    
-    Navigate to strike-ordinary-kenneth-robbie.trycloudflare.com.
-    
+
+    Navigate to {tunnel_url}.
+
     Fill out all visible form fields with placeholder test data.
     Then attempt to click the Submit button.
-    
+
     If the Submit button cannot be clicked:
     - Inspect the DOM to find the exact reason why
     - Record the element selector, tag name, and any blocking attributes (e.g. disabled, hidden, aria-disabled)
