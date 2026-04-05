@@ -9,7 +9,7 @@ import urllib.request
 from pydantic import BaseModel
 from browser_use_sdk.v3 import AsyncBrowserUse
 
-ROUTES = ["/billing", "/settings", "/profile"]
+ROUTES = ["/billing", "/settings", "/"]
 DEV_PORT = 3000
 
 
@@ -205,69 +205,54 @@ async def run_single_agent(client, tunnel_url: str, agent_index: int) -> dict:
 
 
 async def main():
+    # Try to get API key from environment variable first, then fall back to .env file
     api_key = os.getenv("BROWSER_USE_API_KEY")
     if not api_key:
-        raise ValueError("BROWSER_USE_API_KEY not found in environment variables")
+        # Try to read from .env file
+        env_path = os.path.join(os.path.dirname(__file__), ".env")
+        if os.path.exists(env_path):
+            with open(env_path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        key, value = line.split("=", 1)
+                        if key == "BROWSER_USE_API_KEY":
+                            api_key = value
+                            break
+    if not api_key:
+        raise ValueError("BROWSER_USE_API_KEY not found in environment variables or .env file")
 
-    # --- Start 3 tunnels all pointing to port 3000 ---
-    tunnel_pids = []
-    tunnel_hosts = []
-
-    for i in range(len(ROUTES)):
-        pid, url = start_tunnel(DEV_PORT)
-        if url:
-            host = url.replace("https://", "")
-            tunnel_pids.append(pid)
-            tunnel_hosts.append(host)
-            print(f"Tunnel {i}: {url} -> localhost:{DEV_PORT}{ROUTES[i]}")
-        else:
-            print(f"ERROR: Could not create tunnel {i} for localhost:{DEV_PORT}")
-            tunnel_pids.append(None)
-            tunnel_hosts.append(None)
-
-    if any(h is None for h in tunnel_hosts):
-        print("One or more tunnels failed to start. Aborting.")
-        for pid in tunnel_pids:
-            if pid:
-                os.kill(pid, 15)
+    # --- Get tunnel host from CLI argument ---
+    if len(sys.argv) < 2:
+        print("Usage: python run_qa.py <tunnel_host>")
+        print("  Example: python run_qa.py busy-hose-sitemap-enabled.trycloudflare.com")
         sys.exit(1)
 
-    # --- Run QA agents in parallel ---
+    tunnel_host = sys.argv[1]
+    tunnel_hosts = [tunnel_host] * len(ROUTES)  # Use same host for all routes
+    tunnel_pids = [None] * len(ROUTES)  # No PIDs since we're not starting tunnels
+
+    print(f"Using tunnel: https://{tunnel_host}")
+
+    # --- Run single QA agent ---
     client = AsyncBrowserUse(api_key=api_key)
-    tasks = [
-        run_single_agent(client, host, i)
-        for i, host in enumerate(tunnel_hosts)
-    ]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    task = run_single_agent(client, tunnel_host, 1)  # Use agent_index 1 for /settings route
+    result = await task
 
-    # Handle any unexpected exceptions from gather
-    for i, r in enumerate(results):
-        if isinstance(r, Exception):
-            results[i] = {
-                "url": f"https://{tunnel_hosts[i]}{ROUTES[i]}",
-                "route": ROUTES[i],
-                "status": "failed",
-                "bugs": 0,
-                "error": str(r),
-            }
-            report_path = os.path.join(os.path.dirname(__file__), f"bug_report_{i}.json")
-            with open(report_path, "w") as f:
-                json.dump(results[i], f, indent=2)
+    # Write consolidated result to bug_report.json
+    report_path = os.path.join(os.path.dirname(__file__), "bug_report.json")
+    with open(report_path, "w") as f:
+        json.dump(result, f, indent=2)
 
-    # --- Print consolidated summary table ---
-    print("\n=== QA Summary ===")
-    for i, r in enumerate(results):
-        print(f"  Agent {i} | {r.get('route', ROUTES[i])} | {r['url']} | status: {r['status']}")
+    # --- Print result ---
+    print("\n=== QA Result ===")
+    print(f"  URL: {result['url']}")
+    print(f"  Route: {result['route']}")
+    print(f"  Status: {result['status']}")
+    print(f"  Bugs found: {result.get('bugs', 0)}")
+    if result.get('error'):
+        print(f"  Error: {result['error']}")
     print()
-
-    # --- Cleanup ---
-    for pid in tunnel_pids:
-        if pid:
-            try:
-                os.kill(pid, 15)
-            except ProcessLookupError:
-                pass
-    print("Cleanup complete.")
 
 
 if __name__ == "__main__":
