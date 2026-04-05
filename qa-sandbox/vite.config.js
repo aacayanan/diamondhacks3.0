@@ -6,6 +6,6 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 3000,
-    allowedHosts: ['href-networks-seemed-robust.trycloudflare.com/']
+    allowedHosts: ['href-networks-seemed-robust.trycloudflare.com']
   }
 })
