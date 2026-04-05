@@ -222,21 +222,25 @@ async def main():
     if not api_key:
         raise ValueError("BROWSER_USE_API_KEY not found in environment variables or .env file")
 
-    # --- Get tunnel host from CLI argument ---
+    # --- Get tunnel host and optional agent index from CLI arguments ---
     if len(sys.argv) < 2:
-        print("Usage: python run_qa.py <tunnel_host>")
-        print("  Example: python run_qa.py busy-hose-sitemap-enabled.trycloudflare.com")
+        print("Usage: python run_qa.py <tunnel_host> [agent_index]")
+        print("  Example: python run_qa.py busy-hose-sitemap-enabled.trycloudflare.com 0")
         sys.exit(1)
 
     tunnel_host = sys.argv[1]
-    tunnel_hosts = [tunnel_host] * len(ROUTES)  # Use same host for all routes
-    tunnel_pids = [None] * len(ROUTES)  # No PIDs since we're not starting tunnels
+    agent_index = int(sys.argv[2]) if len(sys.argv) > 2 else 0
+
+    if agent_index < 0 or agent_index >= len(ROUTES):
+        print(f"Error: agent_index must be 0-{len(ROUTES)-1} (got {agent_index})")
+        sys.exit(1)
 
     print(f"Using tunnel: https://{tunnel_host}")
+    print(f"Agent index: {agent_index} (route: {ROUTES[agent_index]})")
 
     # --- Run single QA agent ---
     client = AsyncBrowserUse(api_key=api_key)
-    task = run_single_agent(client, tunnel_host, 1)  # Use agent_index 1 for /settings route
+    task = run_single_agent(client, tunnel_host, agent_index)
     result = await task
 
     # Write consolidated result to bug_report.json

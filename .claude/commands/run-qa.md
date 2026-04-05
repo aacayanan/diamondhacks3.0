@@ -16,75 +16,81 @@ else
 fi
 ```
 
-### STEP 1 — Confirm dev server on port 3000
+### STEP 1 — Start dev servers on ports 3000, 3001, 3002
 ```bash
-curl -s http://localhost:3000 > /dev/null 2>&1 && echo "RUNNING" || echo "NOT_RUNNING"
-```
-- If `RUNNING`: skip to Step 2. Set `DEV_PID=""`.
-- If `NOT_RUNNING`: start the dev server:
-```bash
-cd qa-sandbox/ && npm run dev -- --host --port 3000 &
-DEV_PID=$!
-```
-Wait 3 seconds for it to boot, then continue.
+DEV_PORTS=(3000 3001 3002)
+DEV_PIDS=()
 
-### STEP 2 — Tunnel setup (3 tunnels)
+for PORT in "${DEV_PORTS[@]}"; do
+  if curl -s http://localhost:$PORT > /dev/null 2>&1; then
+    echo "Port $PORT: RUNNING"
+    DEV_PIDS+=("")
+  else
+    echo "Port $PORT: Starting..."
+    cd qa-sandbox/ && npm run dev -- --host --port $PORT &
+    DEV_PIDS+=($!)
+    cd ..
+  fi
+done
+
+sleep 3
+echo "Dev servers ready on ports ${DEV_PORTS[*]}"
+```
+
+### STEP 2 — Tunnel setup (1 tunnel per port)
 ```bash
 TUNNELS=()
 TUNNEL_PIDS=()
+TUNNEL_PORTS=(3000 3001 3002)
 
-# Grab any tunnels already running
-mapfile -t EXISTING_TUNNELS < <(browser-use tunnel list 2>&1 | awk '{print $NF}' | grep 'trycloudflare')
+# Check which ports already have a tunnel
+EXISTING=$(browser-use tunnel list 2>&1)
 
-if [ ${#EXISTING_TUNNELS[@]} -ge 3 ]; then
-  echo "Found ${#EXISTING_TUNNELS[@]} existing tunnels. Using first 3."
-  TUNNELS=("${EXISTING_TUNNELS[0]}" "${EXISTING_TUNNELS[1]}" "${EXISTING_TUNNELS[2]}")
-else
-  # Copy existing tunnels into our array
-  for url in "${EXISTING_TUNNELS[@]}"; do
-    TUNNELS+=("$url")
-  done
+for PORT in "${TUNNEL_PORTS[@]}"; do
+  # Look for an existing tunnel targeting this port
+  URL=$(echo "$EXISTING" | grep "port $PORT" | awk '{print $NF}' | grep 'trycloudflare' | head -1)
 
-  # Start new tunnels until we have 3
-  NEEDED=$((3 - ${#TUNNELS[@]}))
-  echo "Found ${#EXISTING_TUNNELS[@]} existing tunnels. Starting $NEEDED more..."
-
-  for i in $(seq 1 $NEEDED); do
+  if [ -n "$URL" ]; then
+    echo "Port $PORT: Existing tunnel → $URL"
+    TUNNELS+=("$URL")
+    TUNNEL_PIDS+=("")
+  else
+    echo "Port $PORT: Starting tunnel..."
     ATTEMPTS=0
     while [ $ATTEMPTS -lt 3 ]; do
-      browser-use tunnel 3000 &
+      browser-use tunnel $PORT &
       PID=$!
       sleep 3
-      URL=$(browser-use tunnel list 2>&1 | awk '{print $NF}' | grep 'trycloudflare' | tail -1)
+      URL=$(browser-use tunnel list 2>&1 | grep "port $PORT" | awk '{print $NF}' | grep 'trycloudflare' | head -1)
       if [ -n "$URL" ]; then
+        echo "Port $PORT: Tunnel → $URL"
         TUNNELS+=("$URL")
         TUNNEL_PIDS+=("$PID")
-        echo "Tunnel $(( ${#TUNNELS[@]} )): $URL"
         break
       fi
       kill $PID 2>/dev/null
       ATTEMPTS=$((ATTEMPTS + 1))
-      echo "Tunnel attempt $ATTEMPTS for slot $i failed. Retrying..."
+      echo "Port $PORT: Attempt $ATTEMPTS failed. Retrying..."
     done
-  done
 
-  # Fallback: if still short of 3, fill remaining with ngrok
-  while [ ${#TUNNELS[@]} -lt 3 ]; do
-    ngrok http 3000 &
-    PID=$!
-    sleep 3
-    URL=$(curl -s http://localhost:4040/api/tunnels | grep -o 'https://[^"]*ngrok[^"]*' | head -1)
-    if [ -n "$URL" ]; then
-      TUNNELS+=("$URL")
-      TUNNEL_PIDS+=("$PID")
-      echo "Tunnel $(( ${#TUNNELS[@]} )) (ngrok): $URL"
-    else
-      kill $PID 2>/dev/null
-      echo "⚠️ ngrok fallback failed. Cannot reach 3 tunnels. Aborting."
-      exit 1
+    # Fallback to ngrok for this port
+    if [ -z "$URL" ]; then
+      ngrok http $PORT &
+      PID=$!
+      sleep 3
+      URL=$(curl -s http://localhost:4040/api/tunnels | grep -o 'https://[^"]*ngrok[^"]*' | head -1)
+      if [ -n "$URL" ]; then
+        echo "Port $PORT: Tunnel (ngrok) → $URL"
+        TUNNELS+=("$URL")
+        TUNNEL_PIDS+=("$PID")
+      else
+        kill $PID 2>/dev/null
+        echo "⚠️ Port $PORT: Tunnel failed. Aborting."
+        exit 1
+      fi
     fi
-  done
-fi
+  fi
+done
 
 # Strip protocol to get bare hostnames
 TUNNEL_HOSTS=()
@@ -95,18 +101,18 @@ done
 
 echo ""
 echo "=== Tunnel Hosts ==="
-echo "Agent 1 → ${TUNNEL_HOSTS[0]}"
-echo "Agent 2 → ${TUNNEL_HOSTS[1]}"
-echo "Agent 3 → ${TUNNEL_HOSTS[2]}"
+echo "Agent 1 (port 3000) → ${TUNNEL_HOSTS[0]}"
+echo "Agent 2 (port 3001) → ${TUNNEL_HOSTS[1]}"
+echo "Agent 3 (port 3002) → ${TUNNEL_HOSTS[2]}"
 ```
 
 ### STEP 3 — Run three QA agents in parallel
 ```bash
 mkdir -p qa/bug_reports
 
-python qa/run_qa.py "${TUNNEL_HOSTS[0]}" & PID1=$!
-python qa/run_qa.py "${TUNNEL_HOSTS[1]}" & PID2=$!
-python qa/run_qa.py "${TUNNEL_HOSTS[2]}" & PID3=$!
+python qa/run_qa.py "${TUNNEL_HOSTS[0]}" 0 & PID1=$!
+python qa/run_qa.py "${TUNNEL_HOSTS[1]}" 1 & PID2=$!
+python qa/run_qa.py "${TUNNEL_HOSTS[2]}" 2 & PID3=$!
 
 echo "Running QA agents... PIDs: $PID1, $PID2, $PID3"
 
@@ -174,7 +180,7 @@ for i in 1 2 3; do
 
     # Re-run QA to verify the fix
     echo "  Re-running QA verification for Agent $i..."
-    python qa/run_qa.py "$HOST"
+    python qa/run_qa.py "$HOST" $((i-1))
 
     # Save the updated report
     cp qa/bug_report.json "qa/bug_reports/agent_${i}_post_fix.json"
@@ -196,9 +202,11 @@ done
 ### STEP 7 — Cleanup
 Kill only what this session started:
 ```bash
-[ -n "$DEV_PID" ] && kill $DEV_PID
+for pid in "${DEV_PIDS[@]}"; do
+  [ -n "$pid" ] && kill $pid 2>/dev/null
+done
 for pid in "${TUNNEL_PIDS[@]}"; do
-  kill $pid 2>/dev/null
+  [ -n "$pid" ] && kill $pid 2>/dev/null
 done
 echo "Cleanup complete."
 ```
@@ -220,7 +228,7 @@ server: {
   allowedHosts: 'all'
 }
 ```
-- The `DEV_PID` / `TUNNEL_PIDS` guards ensure only processes spawned by this session are killed — existing instances are left running.
+- The `DEV_PIDS` / `TUNNEL_PIDS` guards ensure only processes spawned by this session are killed — existing instances are left running.
 - The approval gate in Step 5 is a single unified decision — the user approves fixes for all three agents at once.
 - Each `loop.py` run in Step 6 operates independently against its own tunnel URL.
 - `browser-use tunnel list` outputs in this exact format:
