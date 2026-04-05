@@ -20,7 +20,34 @@ async def main():
     workspace = await client.workspaces.create(name="qa-workspace")
 
     # Define the task to get top 3 stories from Hacker News
-    task = "Navigate to https://news.ycombinator.com/ and find the top 3 stories. Then go to https://tldr.tech/ and get the top story"
+    # task = "Navigate to https://news.ycombinator.com/ and find the top 3 stories. Then go to https://tldr.tech/ and get the top story"
+    # task = "Navigate to https://href-networks-seemed-robust.trycloudflare.com/ and get all the form data. Put john doe boiler sample to fill it out and then return a json of the web contents."
+    task = """
+    Navigate to href-networks-seemed-robust.trycloudflare.com/. 
+
+Fill out all visible form fields with placeholder test data. 
+Then attempt to click the Submit button.
+
+If the Submit button cannot be clicked:
+- Inspect the DOM to find the exact reason why
+- Record the element selector, tag name, and any blocking attributes (e.g. disabled, hidden, aria-disabled)
+- Retry clicking up to 3 times before marking it as a failure
+- On each retry, re-inspect the DOM and note if anything changed
+- If all retries fail, record the final failure reason explicitly
+
+Save your full findings as bug_report.json in the workspace using this structure:
+{
+  "status": "success" | "bug_found" | "failed",
+  "timestamp": "<ISO timestamp>",
+  "actions_taken": [
+    "<step 1 you performed>",
+    "<step 2 you performed>",
+    "..."
+  ],
+"likely_file": "src/App.jsx",
+  "notes": "<anything else observed that may be relevant>"
+
+    """
     model = "gemini-3-flash"
 
     # Run the BrowserUse agent with the task and model
@@ -37,11 +64,11 @@ async def main():
     try:
         parsed_data = json.loads(output_data)
         # Write formatted JSON to file
-        with open("bug_report.json", "w") as f:
+        with open("qa/bug_report.json", "w") as f:
             json.dump(parsed_data, f, indent=2)
     except json.JSONDecodeError:
         # If output is not valid JSON, write the raw string (though task expects JSON)
-        with open("bug_report.json", "w") as f:
+        with open("qa/bug_report.json", "w") as f:
             f.write(output_data)
 
     # Delete the workspace
