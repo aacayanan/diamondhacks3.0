@@ -2,9 +2,16 @@ import asyncio
 import os
 import sys
 import json
-from dotenv import load_dotenv
+import subprocess
+import time
+import re
+import urllib.request
 from pydantic import BaseModel
 from browser_use_sdk.v3 import AsyncBrowserUse
+
+ROUTES = ["/billing", "/settings", "/profile"]
+DEV_PORT = 3000
+
 
 class PageContext(BaseModel):
     page_type: str
@@ -15,129 +22,253 @@ class PageContext(BaseModel):
     likely_risk_areas: list[str]
     suggested_manual_qa_checks: list[str]
 
-async def main():
-    # Load environment variables from .env file
-    load_dotenv()
 
-    # Get API key from environment variable
+def start_tunnel(port: int) -> tuple[int | None, str | None]:
+    """Start a BrowserUse tunnel (with ngrok fallback) for the given port.
+    Returns (pid, full_url) or (None, None) on failure."""
+    try:
+        proc = subprocess.Popen(
+            ["browser-use", "tunnel", str(port)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            shell=True,
+        )
+        time.sleep(5)
+        url = get_tunnel_url_for_port(port)
+        if url:
+            return (proc.pid, url)
+        proc.kill()
+    except FileNotFoundError:
+        pass
+
+    # Fallback to ngrok
+    try:
+        proc = subprocess.Popen(
+            ["ngrok", "http", str(port)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            shell=True,
+        )
+        time.sleep(5)
+        req = urllib.request.Request("http://localhost:4040/api/tunnels")
+        with urllib.request.urlopen(req) as resp:
+            data = json.loads(resp.read())
+        for t in data.get("tunnels", []):
+            url = t.get("public_url", "")
+            if "ngrok" in url:
+                return (proc.pid, url)
+        proc.kill()
+    except Exception:
+        pass
+
+    return (None, None)
+
+
+def get_tunnel_url_for_port(port: int) -> str | None:
+    """Read tunnel URL that maps to the specific port from browser-use tunnel list.
+    Expected format: '  port 3000: https://foo-bar.trycloudflare.com'"""
+    try:
+        result = subprocess.run(
+            ["browser-use", "tunnel", "list"],
+            capture_output=True, text=True, timeout=10,
+            shell=True,
+        )
+        output = result.stdout + result.stderr
+        for line in output.strip().splitlines():
+            # Match lines like "  port 3000: https://foo.trycloudflare.com"
+            if f"port {port}" in line:
+                match = re.search(r"(https://\S+trycloudflare\S+)", line)
+                if match:
+                    return match.group(1)
+    except Exception:
+        pass
+    return None
+
+
+async def run_single_agent(client, tunnel_url: str, agent_index: int) -> dict:
+    """Run a two-pass QA audit for a single route in its own workspace."""
+    workspace = await client.workspaces.create(name=f"qa-workspace-{agent_index}")
+    report_path = os.path.join(os.path.dirname(__file__), f"bug_report_{agent_index}.json")
+    screenshot_dir = os.path.join(os.path.dirname(__file__), "screenshots", f"agent_{agent_index}")
+    os.makedirs(screenshot_dir, exist_ok=True)
+
+    model = "gemini-3-flash"
+    route = ROUTES[agent_index]
+    target_url = f"https://{tunnel_url}{route}"
+    result = {"url": target_url, "route": route, "status": "success", "bugs": 0, "error": None}
+
+    try:
+        # PASS 1: Recon / context gathering
+        context_task = f"""
+            Navigate to {target_url}.
+
+            Analyze ONLY the initial page without doing a full audit.
+            Determine:
+            1. What kind of page this is
+            2. What the user is most likely trying to accomplish here
+            3. What major sections are visible
+            4. What interactive elements are visible
+            5. What UX risk areas are most likely on this page
+            6. What a manual QA tester would most likely test first
+
+            Return structured output only.
+            """
+
+        context_result = await client.run(
+            task=context_task,
+            model=model,
+            output_schema=PageContext,
+        )
+
+        context = context_result.output
+
+        # PASS 2: Targeted audit using the context
+        audit_task = f"""
+            You are performing a UX QA audit of ONLY the initial page at {target_url}.
+
+            PAGE CONTEXT:
+            - Page type: {context.page_type}
+            - Primary user goal: {context.primary_user_goal}
+            - Page summary: {context.page_summary}
+            - Visible sections: {", ".join(context.visible_sections)}
+            - Interactive elements: {", ".join(context.interactive_elements)}
+            - Likely risk areas: {", ".join(context.likely_risk_areas)}
+            - Suggested manual QA checks: {", ".join(context.suggested_manual_qa_checks)}
+
+            Perform a focused visual and UX audit of ONLY the initial page then exit:
+            1. Prioritize checks based on the page context above
+            2. Check interactive elements relevant to the page's primary goal
+            3. Look for visual issues: misalignment, overlap, clipping, spacing, hierarchy
+            4. Check readability and contrast
+            5. Test only high-value interactions on the initial page
+            6. Note responsiveness issues if visible in the current viewport
+
+            For any bugs found:
+            - Use JavaScript to add a red 3px solid border around the buggy element in the DOM (e.g. element.style.border = '3px solid red') before taking the screenshot
+            - Take a screenshot and save it to the workspace
+            - Record the element selector if identifiable, tag name, and issue description
+            - Note the bug category and severity
+            - Retry interaction up to 2 times if needed
+            - Save screenshots after retries when useful
+
+            Save the final findings as bug_report.json in the workspace.
+            Return a concise final summary.
+            """
+
+        audit_result = await client.run(
+            task=audit_task,
+            model=model,
+            workspace_id=workspace.id,
+        )
+
+        # Download screenshots to agent-specific directory
+        files = await client.workspaces.files(workspace.id)
+        for f in files.files:
+            if f.path.endswith(".png"):
+                await client.workspaces.download(workspace.id, f.path, to=os.path.join(screenshot_dir, f.path))
+
+        output_data = audit_result.output
+
+        # Download bug_report.json and format it
+        await client.workspaces.download(workspace.id, "bug_report.json", to=report_path)
+
+        try:
+            with open(report_path, "r") as f:
+                parsed_data = json.load(f)
+            with open(report_path, "w") as f:
+                json.dump(parsed_data, f, indent=2)
+            # Count bugs if present
+            if isinstance(parsed_data, dict) and "bugs" in parsed_data:
+                result["bugs"] = len(parsed_data["bugs"]) if isinstance(parsed_data["bugs"], list) else int(parsed_data["bugs"])
+            elif isinstance(parsed_data, list):
+                result["bugs"] = len(parsed_data)
+        except (json.JSONDecodeError, FileNotFoundError):
+            with open(report_path, "w") as f:
+                f.write(str(output_data))
+
+        if result["bugs"] > 0:
+            result["status"] = "bug_found"
+
+    except Exception as e:
+        result["status"] = "failed"
+        result["error"] = str(e)
+        with open(report_path, "w") as f:
+            json.dump(result, f, indent=2)
+
+    finally:
+        try:
+            await client.workspaces.delete(workspace.id)
+        except Exception:
+            pass
+
+    return result
+
+
+async def main():
     api_key = os.getenv("BROWSER_USE_API_KEY")
     if not api_key:
         raise ValueError("BROWSER_USE_API_KEY not found in environment variables")
 
-    # Get tunnel URL from CLI arguments
-    if len(sys.argv) < 2:
-        print("Usage: python run_qa.py <tunnel_url>")
+    # --- Start 3 tunnels all pointing to port 3000 ---
+    tunnel_pids = []
+    tunnel_hosts = []
+
+    for i in range(len(ROUTES)):
+        pid, url = start_tunnel(DEV_PORT)
+        if url:
+            host = url.replace("https://", "")
+            tunnel_pids.append(pid)
+            tunnel_hosts.append(host)
+            print(f"Tunnel {i}: {url} -> localhost:{DEV_PORT}{ROUTES[i]}")
+        else:
+            print(f"ERROR: Could not create tunnel {i} for localhost:{DEV_PORT}")
+            tunnel_pids.append(None)
+            tunnel_hosts.append(None)
+
+    if any(h is None for h in tunnel_hosts):
+        print("One or more tunnels failed to start. Aborting.")
+        for pid in tunnel_pids:
+            if pid:
+                os.kill(pid, 15)
         sys.exit(1)
-    tunnel_url = sys.argv[1]
 
-    # Initialize the BrowserUse client
+    # --- Run QA agents in parallel ---
     client = AsyncBrowserUse(api_key=api_key)
-    workspace = await client.workspaces.create(name="qa-workspace")
+    tasks = [
+        run_single_agent(client, host, i)
+        for i, host in enumerate(tunnel_hosts)
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    model = "gemini-3-flash"
+    # Handle any unexpected exceptions from gather
+    for i, r in enumerate(results):
+        if isinstance(r, Exception):
+            results[i] = {
+                "url": f"https://{tunnel_hosts[i]}{ROUTES[i]}",
+                "route": ROUTES[i],
+                "status": "failed",
+                "bugs": 0,
+                "error": str(r),
+            }
+            report_path = os.path.join(os.path.dirname(__file__), f"bug_report_{i}.json")
+            with open(report_path, "w") as f:
+                json.dump(results[i], f, indent=2)
 
-    # PASS 1: Recon / context gathering
-    context_task = f"""
-        Navigate to {tunnel_url}.
+    # --- Print consolidated summary table ---
+    print("\n=== QA Summary ===")
+    for i, r in enumerate(results):
+        print(f"  Agent {i} | {r.get('route', ROUTES[i])} | {r['url']} | status: {r['status']}")
+    print()
 
-        Analyze ONLY the initial page without doing a full audit.
-        Determine:
-        1. What kind of page this is
-        2. What the user is most likely trying to accomplish here
-        3. What major sections are visible
-        4. What interactive elements are visible
-        5. What UX risk areas are most likely on this page
-        6. What a manual QA tester would most likely test first
+    # --- Cleanup ---
+    for pid in tunnel_pids:
+        if pid:
+            try:
+                os.kill(pid, 15)
+            except ProcessLookupError:
+                pass
+    print("Cleanup complete.")
 
-        Return structured output only.
-        """
-
-    context_result = await client.run(
-        task=context_task,
-        model=model,
-        output_schema=PageContext,
-    )
-
-    context = context_result.output
-
-    # PASS 2: Targeted audit using the context
-    audit_task = f"""
-        You are performing a UX QA audit of ONLY the initial page at {tunnel_url}.
-
-        PAGE CONTEXT:
-        - Page type: {context.page_type}
-        - Primary user goal: {context.primary_user_goal}
-        - Page summary: {context.page_summary}
-        - Visible sections: {", ".join(context.visible_sections)}
-        - Interactive elements: {", ".join(context.interactive_elements)}
-        - Likely risk areas: {", ".join(context.likely_risk_areas)}
-        - Suggested manual QA checks: {", ".join(context.suggested_manual_qa_checks)}
-
-        Perform a focused visual and UX audit of ONLY the initial page then exit:
-        1. Prioritize checks based on the page context above
-        2. Check interactive elements relevant to the page's primary goal
-        3. Look for visual issues: misalignment, overlap, clipping, spacing, hierarchy
-        4. Check readability and contrast
-        5. Test only high-value interactions on the initial page
-        6. Note responsiveness issues if visible in the current viewport
-
-        For any bugs found:
-        - Take a screenshot and save it to the workspace
-        - Record the element selector if identifiable, tag name, and issue description
-        - Note the bug category and severity
-        - Retry interaction up to 2 times if needed
-        - Save screenshots after retries when useful
-
-        Save the final findings as bug_report.json in the workspace.
-        Return a concise final summary.
-        """
-
-    audit_result = await client.run(
-        task=audit_task,
-        model=model,
-        workspace_id=workspace.id,
-    )
-
-    files = await client.workspaces.files(workspace.id)
-    for f in files.files:
-        if f.path.endswith(".png"):
-            await client.workspaces.download(workspace.id, f.path, to=f"./qa/screenshots/{f.path}")
-            print(f"Downloaded: {f.path}")
-
-    # Extract the output (assumed to be a JSON string)
-    output_data = audit_result.output
-    print(output_data)
-
-    # The BrowserUse agent writes bug_report.json in the same directory as this script.
-    # Read that file to get the JSON.
-    bug_report_path = os.path.join(os.path.dirname(__file__), "bug_report.json")
-
-    # Download the file to your local machine
-    print(workspace.id, "Bug Report")
-    for f in files.files:
-        print(f.path, f.size)
-
-    await client.workspaces.download(workspace.id, "bug_report.json", to="./bug_report.json")
-
-    try:
-        with open(bug_report_path, "r") as f:
-            parsed_data = json.load(f)
-        # Re-write formatted JSON
-        with open(bug_report_path, "w") as f:
-            json.dump(parsed_data, f, indent=2)
-        print(parsed_data)
-    except (json.JSONDecodeError, FileNotFoundError):
-        with open(bug_report_path, "w") as f:
-            f.write(output_data)
-
-    # Print a confirmation to the terminal
-    print("Successfully saved bug report to bug_report.json and deleted workspace")
-
-    #Delete the workspace
-    try:
-        await client.workspaces.delete(workspace.id)
-    except Exception as e:
-        print(f"Warning: Failed to delete workspace: {e}")
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -24,7 +24,7 @@ function Dashboard() {
           <button onClick={() => setActivityTab('week')} className={activityTab === 'week' ? 'active' : ''}>
             This Week
           </button>
-          <button onClick={() => setActivityTab('today')} className={activityTab === 'today' ? 'active' : ''}>
+          <button onClick={() => {}} className={activityTab === 'today' ? 'active' : ''}>
             Today
           </button>
         </div>

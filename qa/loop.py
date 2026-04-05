@@ -14,7 +14,6 @@ from rich.panel import Panel
 from rich.text import Text
 
 console = Console()
-BUG_REPORT = Path("bug_report.json")
 MAX_ITERATIONS = 5
 
 BANNER = r"""
@@ -48,7 +47,7 @@ def timestamp() -> str:
     return datetime.now().strftime("%H:%M:%S")
 
 
-def make_status_panel(iteration: int, agent: str, status: str) -> Panel:
+def make_status_panel(iteration: int, agent: str, status: str, report_name: str) -> Panel:
     t = Text()
     t.append(f"  Iteration: ", style="bold")
     t.append(f"{iteration} / {MAX_ITERATIONS}   ", style="cyan")
@@ -66,7 +65,7 @@ def make_status_panel(iteration: int, agent: str, status: str) -> Panel:
         t.append(status, style="green")
     else:
         t.append(status, style="white")
-    return Panel(t, title="[bold]AUTO-QA Orchestrator[/bold]", border_style="cyan")
+    return Panel(t, title=f"[bold]AUTO-QA Orchestrator — {report_name}[/bold]", border_style="cyan")
 
 
 def success_banner():
@@ -91,30 +90,32 @@ def max_iterations_banner():
 
 
 async def main():
-    if len(sys.argv) < 2:
-        console.print("[red]Usage: python loop.py <tunnel_url>[/red]")
+    if len(sys.argv) < 3:
+        console.print("[red]Usage: python loop.py <tunnel_url> <bug_report_path>[/red]")
         sys.exit(1)
 
     tunnel_url = sys.argv[1]
+    bug_report_path = Path(sys.argv[2])
+    agent_label = f"[Agent {bug_report_path.stem.split('_')[-1]}]"
     print_banner()
 
     for iteration in range(1, MAX_ITERATIONS + 1):
         agent = "BrowserUse"
         status = "running"
 
-        console.print(f"\n[bold cyan]── Iteration {iteration}/{MAX_ITERATIONS} ──[/bold cyan]\n")
+        console.print(f"\n[bold cyan]{agent_label} ── Iteration {iteration}/{MAX_ITERATIONS} ──[/bold cyan]\n")
 
         # ── Clear stale report ─────────────────────────────────────
-        if BUG_REPORT.exists():
-            BUG_REPORT.unlink()
-            console.print(f"[dim][{timestamp()}] Removed stale bug_report.json[/dim]")
+        if bug_report_path.exists():
+            bug_report_path.unlink()
+            console.print(f"[dim][{timestamp()}] {agent_label} Removed stale {bug_report_path.name}[/dim]")
 
         # ── Run QA Agent ───────────────────────────────────────────
-        console.print(make_status_panel(iteration, agent, status))
-        console.print(f"[yellow][{timestamp()}] 🌐 Starting BrowserUse QA Agent...[/yellow]")
+        console.print(make_status_panel(iteration, agent, status, bug_report_path.name))
+        console.print(f"[yellow][{timestamp()}] {agent_label} 🌐 Starting BrowserUse QA Agent...[/yellow]")
 
         proc = await asyncio.create_subprocess_exec(
-            sys.executable, "run_qa.py", tunnel_url,
+            sys.executable, "run_qa.py", tunnel_url, "--report-path", str(bug_report_path),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
@@ -126,24 +127,24 @@ async def main():
         await proc.wait()
 
         # ── Read bug report ────────────────────────────────────────
-        if not BUG_REPORT.exists():
-            console.print(f"[red][{timestamp()}] ERROR: No bug_report.json produced. Aborting.[/red]")
+        if not bug_report_path.exists():
+            console.print(f"[red][{timestamp()}] {agent_label} ERROR: No {bug_report_path.name} produced. Aborting.[/red]")
             break
 
-        with open(BUG_REPORT) as f:
+        with open(bug_report_path) as f:
             report = json.load(f)
 
         qa_status = report.get("status", "unknown")
 
         # ── SUCCESS ────────────────────────────────────────────────
         if qa_status == "success":
-            console.print(f"[green][{timestamp()}] ✅ QA status: success[/green]")
+            console.print(f"[green][{timestamp()}] {agent_label} ✅ QA status: success[/green]")
             success_banner()
             return
 
         # ── BUG FOUND ──────────────────────────────────────────────
         if qa_status == "bug_found":
-            console.print(f"\n[red][{timestamp()}] 🐛 BUG FOUND[/red]")
+            console.print(f"\n[red][{timestamp()}] {agent_label} 🐛 BUG FOUND[/red]")
             console.print(f"[red]  Notes: {report.get('notes', 'N/A')}[/red]")
             console.print(f"[red]  File : {report.get('likely_file', 'N/A')}[/red]\n")
 
@@ -153,8 +154,8 @@ async def main():
 
             # ── Hand off to Claude Code CLI ────────────────────────
             agent = "Claude Code"
-            console.print(make_status_panel(iteration, agent, "bug_found"))
-            console.print(f"[magenta][{timestamp()}] 🤖 Claude Code is fixing the bug...[/magenta]\n")
+            console.print(make_status_panel(iteration, agent, "bug_found", bug_report_path.name))
+            console.print(f"[magenta][{timestamp()}] {agent_label} 🤖 Claude Code is fixing the bug...[/magenta]\n")
 
             bug_json = json.dumps(report, indent=2)
             prompt = (
@@ -180,7 +181,7 @@ async def main():
             continue
 
         # ── FAILED / UNKNOWN ───────────────────────────────────────
-        console.print(f"[yellow][{timestamp()}] WARNING: Unexpected status '{qa_status}'. Stopping.[/yellow]")
+        console.print(f"[yellow][{timestamp()}] {agent_label} WARNING: Unexpected status '{qa_status}'. Stopping.[/yellow]")
         break
 
     max_iterations_banner()

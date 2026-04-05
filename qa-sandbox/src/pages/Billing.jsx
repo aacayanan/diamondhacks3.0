@@ -9,7 +9,7 @@ function Billing() {
   const [billingCycle, setBillingCycle] = useState('monthly');
 
   const handlePlanChange = (e) => {
-    setPlan(e.target.value);
+    return;
   };
 
   const handleCycleChange = (e) => {

@@ -89,7 +89,7 @@ function Settings() {
                 type="text"
                 id="profile-name"
                 value={profile.name}
-                onChange={(e) => handleInputChange('name', e.target.value)}
+                onChange={(e) => {}}
                 placeholder="Enter your full name"
                 className="form-input"
                 /* BUG 48: Missing aria-label for screen readers */

@@ -32,7 +32,7 @@ function Profile() {
           Avatar
         </button>
         <button
-          onClick={() => handleTabChange('security')}
+          onClick={() => {}}
           className={activeTab === 'security' ? 'tab-active' : 'tab-inactive'}
         >
           Security
