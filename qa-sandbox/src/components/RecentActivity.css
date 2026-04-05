@@ -1,0 +1,129 @@
+.recent-activity {
+  background: white;
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  border: 1px solid #e2e8f0;
+}
+
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  /* BUG 32: Using flex for vertical list causes alignment issues when content varies */
+  /* BUG 33: Gap causes uneven spacing when items wrap */
+}
+
+.activity-item {
+  display: flex;
+  align-items: flex-start; /* BUG 34: Should be center for proper icon alignment */
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid #f1f5f9;
+  border-radius: 0.375rem;
+  transition: all 0.2s ease;
+  /* BUG 35: Transition on entire item causes performance issues */
+}
+
+.activity-item:hover {
+  background-color: #f8fafc;
+  transform: translateX(4px); /* BUG 36: Horizontal hover shift is unusual */
+  border-color: #e2e8f0;
+}
+
+.activity-item.success {
+  border-left: 4px solid #10b981;
+}
+
+.activity-item.error {
+  border-left: 4px solid #ef4444;
+}
+
+.activity-item.info {
+  border-left: 4px solid #3b82f6;
+}
+
+.activity-icon {
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  background-color: #f0fdf4;
+  border-radius: 0.5rem;
+  /* BUG 37: Fixed size doesn't scale with text */
+  color: #10b981;
+  /* BUG 38: Icon color hardcoded, doesn't change with type */
+}
+
+.activity-item.error .activity-icon {
+  background-color: #fef2f2;
+  color: #ef4444;
+}
+
+.activity-item.info .activity-icon {
+  background-color: #eff6ff;
+  color: #3b82f6;
+}
+
+.activity-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.activity-description {
+  font-size: 0.875rem;
+  color: #1e293b;
+  font-weight: 500;
+  line-height: 1.4;
+  /* BUG 39: Text may overflow container on small screens */
+  white-space: nowrap; /* BUG 40: Prevents wrapping, causes overflow */
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.activity-time {
+  font-size: 0.75rem;
+  color: #64748b;
+  /* BUG 41: Time text too small */
+}
+
+.activity-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e2e8f0;
+  /* BUG 42: Border top creates visual separation issues */
+}
+
+.load-more {
+  background: #2563eb;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  /* BUG 43: No focus outline */
+  /* BUG 44: Hitbox too small */
+}
+
+.load-more:hover {
+  background-color: #1d4ed8;
+  transform: scale(1.05); /* BUG 45: Scale hover causes layout shift */
+}
+
+.activity-count {
+  font-size: 0.875rem;
+  color: #64748b;
+  /* BUG 46: Count text too small */
+  font-weight: 500;
+}
+
+/* BUG 47: No responsive design for mobile */

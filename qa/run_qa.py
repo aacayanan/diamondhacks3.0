@@ -26,7 +26,7 @@ async def main():
     # Create a workspace and link it to the client
     workspace = await client.workspaces.create(name="qa-workspace")
 
-    # Define the task to get top 3 stories from Hacker News
+    # Define the task to test for visual/UX bugs
     task = f"""
     Your output MUST be saved as bug_report.json with EXACTLY this JSON structure and no other format:
 
@@ -68,6 +68,12 @@ async def main():
         model=model,
         workspace_id=workspace.id,
     )
+
+    files = await client.workspaces.files(workspace.id)
+    for f in files.files:
+        if f.path.endswith(".png"):
+            await client.workspaces.download(workspace.id, f.path, to=f"./qa/screenshots/{f.path}")
+            print(f"Downloaded: {f.path}")
 
     # Extract the output (assumed to be a JSON string)
     output_data = result.output
