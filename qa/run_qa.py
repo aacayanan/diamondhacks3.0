@@ -3,16 +3,17 @@ import os
 import sys
 import json
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from browser_use_sdk.v3 import AsyncBrowserUse
 
-class BugReport(BaseModel):
-    status: str = Field(description='One of "success", "bug_found", or "failed"')
-    timestamp: str = Field(description="ISO 8601 timestamp of when the report was generated")
-    actions_taken: list[str] = Field(description="Ordered list of steps the agent performed during testing")
-    likely_file: str = Field(description="Relative path to the source file most likely containing the bug")
-    notes: str = Field(description="Any additional observations or context relevant to the findings")
-
+class PageContext(BaseModel):
+    page_type: str
+    primary_user_goal: str
+    page_summary: str
+    visible_sections: list[str]
+    interactive_elements: list[str]
+    likely_risk_areas: list[str]
+    suggested_manual_qa_checks: list[str]
 
 async def main():
     # Load environment variables from .env file
@@ -28,36 +29,71 @@ async def main():
         print("Usage: python run_qa.py <tunnel_url>")
         sys.exit(1)
     tunnel_url = sys.argv[1]
-    page_url = tunnel_url
 
     # Initialize the BrowserUse client
     client = AsyncBrowserUse(api_key=api_key)
-
-    # Create a workspace and link it to the client
     workspace = await client.workspaces.create(name="qa-workspace")
 
-    # Define the task to test for visual/UX bugs
-    task = f"""
-    You are testing exactly ONE page: {page_url}
-
-    Navigate to {page_url} and test only this page. Do NOT click any tabs, navigation links, menu items, or anything that changes the visible content. Only interact with form fields and buttons that are already visible on the initial page load. If you navigate away for any reason, stop immediately and return results.
-
-    Fill out all visible form fields with placeholder test data.
-    Then attempt to click the primary action button (this may be labeled Submit, Save, Save Changes, Continue, or similar).
-    
-    If the button cannot be clicked:
-    - Inspect the DOM to find the exact reason why
-    - Record the element selector, tag name, and any blocking attributes (e.g. disabled, hidden, aria-disabled)
-    - Retry clicking up to 3 times before marking it as a failure
-    - On each retry, re-inspect the DOM and note if anything changed
-    - If all retries fail, record the final failure reason explicitly
-    """
     model = "gemini-3-flash"
 
-    # Run the BrowserUse agent with the task and model
-    result = await client.run(
-        task=task,
-        output_schema=BugReport,
+    # PASS 1: Recon / context gathering
+    context_task = f"""
+        Navigate to {tunnel_url}.
+
+        Analyze ONLY the initial page without doing a full audit.
+        Determine:
+        1. What kind of page this is
+        2. What the user is most likely trying to accomplish here
+        3. What major sections are visible
+        4. What interactive elements are visible
+        5. What UX risk areas are most likely on this page
+        6. What a manual QA tester would most likely test first
+
+        Return structured output only.
+        """
+
+    context_result = await client.run(
+        task=context_task,
+        model=model,
+        output_schema=PageContext,
+    )
+
+    context = context_result.output
+
+    # PASS 2: Targeted audit using the context
+    audit_task = f"""
+        You are performing a UX QA audit of ONLY the initial page at {tunnel_url}.
+
+        PAGE CONTEXT:
+        - Page type: {context.page_type}
+        - Primary user goal: {context.primary_user_goal}
+        - Page summary: {context.page_summary}
+        - Visible sections: {", ".join(context.visible_sections)}
+        - Interactive elements: {", ".join(context.interactive_elements)}
+        - Likely risk areas: {", ".join(context.likely_risk_areas)}
+        - Suggested manual QA checks: {", ".join(context.suggested_manual_qa_checks)}
+
+        Perform a focused visual and UX audit of ONLY the initial page then exit:
+        1. Prioritize checks based on the page context above
+        2. Check interactive elements relevant to the page's primary goal
+        3. Look for visual issues: misalignment, overlap, clipping, spacing, hierarchy
+        4. Check readability and contrast
+        5. Test only high-value interactions on the initial page
+        6. Note responsiveness issues if visible in the current viewport
+
+        For any bugs found:
+        - Take a screenshot and save it to the workspace
+        - Record the element selector if identifiable, tag name, and issue description
+        - Note the bug category and severity
+        - Retry interaction up to 2 times if needed
+        - Save screenshots after retries when useful
+
+        Save the final findings as bug_report.json in the workspace.
+        Return a concise final summary.
+        """
+
+    audit_result = await client.run(
+        task=audit_task,
         model=model,
         workspace_id=workspace.id,
     )
@@ -68,19 +104,40 @@ async def main():
             await client.workspaces.download(workspace.id, f.path, to=f"./qa/screenshots/{f.path}")
             print(f"Downloaded: {f.path}")
 
-    # Extract the structured bug report from the agent result
-    bug = result.output
-    print(bug)
+    # Extract the output (assumed to be a JSON string)
+    output_data = audit_result.output
+    print(output_data)
 
+    # The BrowserUse agent writes bug_report.json in the same directory as this script.
+    # Read that file to get the JSON.
     bug_report_path = os.path.join(os.path.dirname(__file__), "bug_report.json")
-    with open(bug_report_path, "w") as f:
-        json.dump(bug.model_dump(), f, indent=2)
 
-    # Delete the workspace
-    await client.workspaces.delete(workspace.id)
+    # Download the file to your local machine
+    print(workspace.id, "Bug Report")
+    for f in files.files:
+        print(f.path, f.size)
+
+    await client.workspaces.download(workspace.id, "bug_report.json", to="./bug_report.json")
+
+    try:
+        with open(bug_report_path, "r") as f:
+            parsed_data = json.load(f)
+        # Re-write formatted JSON
+        with open(bug_report_path, "w") as f:
+            json.dump(parsed_data, f, indent=2)
+        print(parsed_data)
+    except (json.JSONDecodeError, FileNotFoundError):
+        with open(bug_report_path, "w") as f:
+            f.write(output_data)
 
     # Print a confirmation to the terminal
     print("Successfully saved bug report to bug_report.json and deleted workspace")
+
+    #Delete the workspace
+    try:
+        await client.workspaces.delete(workspace.id)
+    except Exception as e:
+        print(f"Warning: Failed to delete workspace: {e}")
 
 if __name__ == "__main__":
     asyncio.run(main())
