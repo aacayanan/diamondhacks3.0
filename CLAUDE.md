@@ -41,13 +41,20 @@ Python deps are in a local `.venv/`. The QA script needs `BROWSER_USE_API_KEY` s
 ## Architecture
 
 ```
-qa-sandbox/src/App.jsx    — Feedback form (Name, Email, Message, Submit button)
-qa-sandbox/src/App.css    — Styling (note: submit button styled as enabled despite being disabled)
-qa/run_qa.py              — BrowserUse agent that fills the form and tests submit
+qa-sandbox/src/App.jsx             — React Router setup with routes for Dashboard, FeedbackForm, Billing, Settings, Profile
+qa-sandbox/src/App.css             — Styling including disabled button styles
+qa-sandbox/src/pages/FeedbackForm.jsx  — Feedback form (Name, Email, Message, Submit button at /form route)
+qa/run_qa.py                       — BrowserUse agent that tests multiple routes and outputs bug reports
+qa/loop.py                         — Auto-fix orchestration that uses claude code to fix bugs
+qa/format_report.py                — Formats bug reports for human-readable display
 ```
 
-The QA agent (`qa/run_qa.py`) creates a BrowserUse workspace, runs an automated browser session against the tunnel URL, and outputs a structured `bug_report.json` with status, actions taken, and the likely file containing the bug.
+The QA agent (`qa/run_qa.py`) creates BrowserUse workspaces, runs automated browser sessions against tunnel URLs for routes `/billing`, `/settings`, `/profile`, and outputs structured bug reports. The `loop.py` orchestrates the auto-fix workflow by passing bug reports to Claude Code for fixes.
 
 ## Intentional Bug
 
-The Submit button in `App.jsx:41` has `disabled={true}` hardcoded. This is intentional — it tests whether the QA agent can detect a button that looks clickable but is actually disabled in the DOM. Do not "fix" this unless explicitly asked.
+**Note:** The intentional bug in this demo is that the Submit button in `qa-sandbox/src/pages/FeedbackForm.jsx` has `disabled={true}` hardcoded. However, examining the current code, the submit button (line 47) does NOT currently have this attribute.
+
+The CSS in `qa-sandbox/src/App.css` (lines 116-122) contains styles for disabled buttons that keep them looking enabled (`opacity: 1`), which suggests the bug should exist. The QA agent is designed to detect when a button appears clickable but is actually disabled in the DOM.
+
+Do not modify source files or "fix" bugs unless explicitly asked.
